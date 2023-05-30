@@ -1,1 +1,101 @@
 /* HtmlText Module Custom Styles */
+@import url(https://fonts.googleapis.com);
+@import url('https://fonts.googleapis.com/css2?family=FontName&display=swap');
+@import url(https://fonts.googleapis.com/css2?family=Italiana&display=swap);
+
+.main-content {
+    background: url(https://images.squarespace-cdn.com/content/v1/632dd3f1ec46d35a6938253f/1665651157579-O4ONQU04CK0EN62DV9IC/unsplash-image-9yCYGgPe5Kg.jpg) no-repeat fixed;
+    background-size: cover;
+    position: relative;
+    z-index: 2;
+}
+
+h1,h2,h3 {
+    font-family: Italiana;
+    font-weight:100;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.Index-Page-content {
+    -webkit-box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+    padding: 100px 59px;
+}
+
+.vertical-line {
+    background: radial-gradient(ellipse farthest-corner at right bottom,#fedb37 0%,#fdb931 8%,#9f7928 30%,#8a6e2f 40%,transparent 80%),radial-gradient(ellipse farthest-corner at left top,#fff 0%,#ffffac 8%,#d1b464 25%,#5d4a1f 62.5%,#5d4a1f 100%);
+    width: 3px;
+    height: 8vh;
+    margin: 0 auto;
+}
+
+.resources-image {
+    width: 66.6%;
+    gap: 4em;
+}
+
+.summary-item-list.sqs-gallery {
+    position: relative;
+    width: 100%;
+    height: 50%;
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: column;
+}
+
+.summary-thumbnail-outer-container {
+    position: relative;
+    width: 100%;
+    margin-bottom: 1em;    
+}
+
+.summary-thumbnail.img-wrapper {
+    position: relative;
+    overflow: hidden;
+    padding-bottom: 66.6%;
+}
+
+a.summary-title-link {
+    font-size: 20px;
+}
+
+a.summary-thumbnail-container:hover, a.summary-read-more-link, a.summary-title-link:hover {
+    color: inherit;
+}
+
+img.summary-thumbnail-image {
+    width: 100%;
+    height: 100%;
+    left: 0;
+    position: absolute;
+}
+
+.summary-title {
+    text-align: center;
+}
+
+.summary-metadata-container.summary-metadata-container--below-title {
+    text-align: center;
+}
+
+@media screen and (min-width: 1180px) {
+    .summary-item-list.sqs-gallery {
+        width: 45%;
+        height: 100%;
+    }
+}
+
+@media screen and (max-width: 640px) {
+    .Index-Page-content {
+        padding: 2em;
+    }
+    .resources-image {
+        width: 100%;
+    }
+}
+

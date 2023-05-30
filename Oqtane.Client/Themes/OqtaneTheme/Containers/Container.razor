@@ -5,7 +5,7 @@
 <div class="@_classes">
     @if (_title && ModuleState.Title != "-")
     {
-        <div class="row px-4">
+        <div class="">
             <div class="d-flex flex-nowrap">
                 <ModuleActions /><h2><ModuleTitle /></h2>
             </div>
@@ -16,8 +16,8 @@
     {
         <ModuleActions />
     }
-    <div class="row px-4">
-        <div class="container-fluid">
+    <div class="">
+        <div class="">
             <ModuleInstance />
         </div>
     </div>
@@ -27,7 +27,7 @@
     public override string Name => "Customizable Container";
 
     private bool _title = true;
-    private string _classes = "container-fluid";
+    private string _classes = "";
 
     protected override void OnParametersSet()
     {
