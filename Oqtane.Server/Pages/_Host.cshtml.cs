@@ -19,7 +19,6 @@ using Microsoft.Extensions.Primitives;
 using Oqtane.Enums;
 using Oqtane.Security;
 using Oqtane.Extensions;
-using Oqtane.Themes;
 
 namespace Oqtane.Pages
 {
@@ -37,9 +36,10 @@ namespace Oqtane.Pages
         private readonly IVisitorRepository _visitors;
         private readonly IAliasRepository _aliases;
         private readonly ISettingRepository _settings;
+        private readonly ServerStateManager _serverState;
         private readonly ILogManager _logger;
 
-        public HostModel(IConfigManager configuration, ITenantManager tenantManager, ILocalizationManager localizationManager, ILanguageRepository languages, IAntiforgery antiforgery, IJwtManager jwtManager, ISiteRepository sites, IPageRepository pages, IUrlMappingRepository urlMappings, IVisitorRepository visitors, IAliasRepository aliases, ISettingRepository settings, ILogManager logger)
+        public HostModel(IConfigManager configuration, ITenantManager tenantManager, ILocalizationManager localizationManager, ILanguageRepository languages, IAntiforgery antiforgery, IJwtManager jwtManager, ISiteRepository sites, IPageRepository pages, IUrlMappingRepository urlMappings, IVisitorRepository visitors, IAliasRepository aliases, ISettingRepository settings, ServerStateManager serverState, ILogManager logger)
         {
             _configuration = configuration;
             _tenantManager = tenantManager;
@@ -53,6 +53,7 @@ namespace Oqtane.Pages
             _visitors = visitors;
             _aliases = aliases;
             _settings = settings;
+            _serverState = serverState;
             _logger = logger;
         }
 
@@ -109,7 +110,7 @@ namespace Oqtane.Pages
                         }
                     }
 
-                    var site = _sites.GetSite(alias.SiteId);
+                    var site = _sites.InitializeSite(alias);
                     if (site != null && !site.IsDeleted && site.Runtime != "Hybrid")
                     {
                         Route route = new Route(url, alias.Path);
@@ -118,35 +119,11 @@ namespace Oqtane.Pages
                         {
                             Runtime = site.Runtime;
                         }
-                        if (!string.IsNullOrEmpty(site.RenderMode))
+                       if (!string.IsNullOrEmpty(site.RenderMode))
                         {
                             RenderMode = site.RenderMode;
                         }
-                        if (Runtime == "Server")
-                        {
-                            ReconnectScript = CreateReconnectScript();
-                        }
-                        if (site.PwaIsEnabled && site.PwaAppIconFileId != null && site.PwaSplashIconFileId != null)
-                        {
-                            PWAScript = CreatePWAScript(alias, site, route);
-                        }
-                        if (!string.IsNullOrEmpty(site.HeadContent))
-                        {
-                            ProcessHeadContent(site.HeadContent, "site");
-                        }
-                        var ThemeType = site.DefaultThemeType;
-
-                        // get jwt token for downstream APIs
-                        if (User.Identity.IsAuthenticated)
-                        {
-                            var sitesettings = HttpContext.GetSiteSettings();
-                            var secret = sitesettings.GetValue("JwtOptions:Secret", "");
-                            if (!string.IsNullOrEmpty(secret))
-                            {
-                                AuthorizationToken = _jwtManager.GenerateToken(alias, (ClaimsIdentity)User.Identity, secret, sitesettings.GetValue("JwtOptions:Issuer", ""), sitesettings.GetValue("JwtOptions:Audience", ""), int.Parse(sitesettings.GetValue("JwtOptions:Lifetime", "20")));
-                            }
-                        }
-
+ 
                         if (site.VisitorTracking)
                         {
                             TrackVisitor(site.SiteId);
@@ -175,13 +152,32 @@ namespace Oqtane.Pages
                             }
                         }
 
-                        ProcessHeadContent(page.HeadContent, $"page{page.PageId}");
-
-                        // include global resources
-                        var assemblies = AppDomain.CurrentDomain.GetOqtaneAssemblies();
-                        foreach (Assembly assembly in assemblies)
+                        // get jwt token for downstream APIs
+                        if (User.Identity.IsAuthenticated)
                         {
-                            ProcessHostResources(assembly, alias);
+                            var sitesettings = HttpContext.GetSiteSettings();
+                            var secret = sitesettings.GetValue("JwtOptions:Secret", "");
+                            if (!string.IsNullOrEmpty(secret))
+                            {
+                                AuthorizationToken = _jwtManager.GenerateToken(alias, (ClaimsIdentity)User.Identity, secret, sitesettings.GetValue("JwtOptions:Issuer", ""), sitesettings.GetValue("JwtOptions:Audience", ""), int.Parse(sitesettings.GetValue("JwtOptions:Lifetime", "20")));
+                            }
+                        }
+
+                        // inject scripts
+                        if (Runtime == "Server")
+                        {
+                            ReconnectScript = CreateReconnectScript();
+                        }
+                        if (site.PwaIsEnabled && site.PwaAppIconFileId != null && site.PwaSplashIconFileId != null)
+                        {
+                            PWAScript = CreatePWAScript(alias, site, route);
+                        }
+                        HeadResources += ParseScripts(site.HeadContent);
+                        BodyResources += ParseScripts(site.BodyContent);
+                        var scripts = _serverState.GetServerState(site.SiteId).Scripts;
+                        foreach (var script in scripts)
+                        {
+                            AddScript(script, alias);
                         }
 
                         // set culture if not specified
@@ -414,97 +410,55 @@ namespace Oqtane.Pages
             "</script>";
         }
 
-        private void ProcessHostResources(Assembly assembly, Alias alias)
-        {
-            var types = assembly.GetTypes().Where(item => item.GetInterfaces().Contains(typeof(IHostResources)));
-            foreach (var type in types)
-            {
-                var obj = Activator.CreateInstance(type) as IHostResources;
-                foreach (var resource in obj.Resources)
-                {
-                    resource.Level = ResourceLevel.App;
-                    ProcessResource(resource, 0, alias);
-                }
-            }
-        }
-
-        private void ProcessHeadContent(string headcontent, string id)
+        private string ParseScripts(string headcontent)
         {
             // iterate scripts
-            if (headcontent != null)
+            var scripts = "";
+            if (!string.IsNullOrEmpty(headcontent))
             {
-                var count = 0;
                 var index = headcontent.IndexOf("<script");
                 while (index >= 0)
                 {
-                    var script = headcontent.Substring(index, headcontent.IndexOf("</script>", index) + 9 - index);
-                    if (!script.Contains("src=") && !script.Contains("id="))
-                    {
-                        count += 1;
-                        id += $"-script{count}";
-                        script = script.Replace("<script", $"<script id=\"{id}\"");
-                        index += id.Length;
-                    }
-                    HeadResources += script + Environment.NewLine;
+                    scripts += headcontent.Substring(index, headcontent.IndexOf("</script>", index) + 9 - index);
                     index = headcontent.IndexOf("<script", index + 1);
+                }
+            }
+            return scripts;
+        }
+
+        private void AddScript(Resource resource, Alias alias)
+        {
+            var script = CreateScript(resource, alias);
+            if (resource.Location == Shared.ResourceLocation.Head)
+            {
+                if (!HeadResources.Contains(script))
+                {
+                    HeadResources += script + Environment.NewLine;
+                }
+            }
+            else
+            {
+                if (!BodyResources.Contains(script))
+                {
+                    BodyResources += script + Environment.NewLine;
                 }
             }
         }
 
-        private void ProcessResource(Resource resource, int count, Alias alias)
+        private string CreateScript(Resource resource, Alias alias)
         {
-            var url = (resource.Url.Contains("://")) ? resource.Url : alias.BaseUrl + resource.Url;
-            switch (resource.ResourceType)
+            if (!string.IsNullOrEmpty(resource.Url))
             {
-                case ResourceType.Stylesheet:
-                    if (!HeadResources.Contains(url, StringComparison.OrdinalIgnoreCase))
-                    {
-                        string id = "";
-                        if (resource.Level == ResourceLevel.Page)
-                        {
-                            id = "id=\"app-stylesheet-" + resource.Level.ToString().ToLower() + "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + count.ToString("00") + "\" ";
-                        }
-                        HeadResources += "<link " + id + "rel=\"stylesheet\" href=\"" + url + "\"" + CrossOrigin(resource.CrossOrigin) + Integrity(resource.Integrity) + " type=\"text/css\"/>" + Environment.NewLine;
-                    }
-                    break;
-                case ResourceType.Script:
-                    if (resource.Location == Shared.ResourceLocation.Body)
-                    {
-                        if (!BodyResources.Contains(url, StringComparison.OrdinalIgnoreCase))
-                        {
-                            BodyResources += "<script src=\"" + url + "\"" + CrossOrigin(resource.CrossOrigin) + Integrity(resource.Integrity) + "></script>" + Environment.NewLine;
-                        }
-                    }
-                    else
-                    {
-                        if (!HeadResources.Contains(resource.Url, StringComparison.OrdinalIgnoreCase))
-                        {
-                            HeadResources += "<script src=\"" + url + "\"" + CrossOrigin(resource.CrossOrigin) + Integrity(resource.Integrity) + "></script>" + Environment.NewLine;
-                        }
-                    }
-                    break;
-            }
-        }
-        private string CrossOrigin(string crossorigin)
-        {
-            if (!string.IsNullOrEmpty(crossorigin))
-            {
-                return " crossorigin=\"" + crossorigin + "\"";
+                var url = (resource.Url.Contains("://")) ? resource.Url : alias.BaseUrl + resource.Url;
+                return "<script src=\"" + url + "\"" +
+                    ((!string.IsNullOrEmpty(resource.CrossOrigin)) ? " crossorigin=\"" + resource.CrossOrigin + "\"" : "") +
+                    ((!string.IsNullOrEmpty(resource.Integrity)) ? " integrity=\"" + resource.Integrity + "\"" : "") +
+                    "></script>";
             }
             else
             {
-                return "";
-            }
-        }
-        private string Integrity(string integrity)
-        {
-            if (!string.IsNullOrEmpty(integrity))
-            {
-                return " integrity=\"" + integrity + "\"";
-            }
-            else
-            {
-                return "";
+                // inline script
+                return "<script>" + resource.Content + "</script>";
             }
         }
 
