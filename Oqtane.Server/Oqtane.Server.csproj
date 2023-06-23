@@ -21,10 +21,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="wwwroot\Modules\Templates\**" />
-    <Content Remove="wwwroot\Modules\Templates\**" />
-    <EmbeddedResource Remove="wwwroot\Modules\Templates\**" />
     <Compile Remove="wwwroot\Themes\Templates\**" />
+    <Content Remove="wwwroot\Modules\Templates\**" />
     <Content Remove="wwwroot\Themes\Templates\**" />
+    <EmbeddedResource Remove="wwwroot\Modules\Templates\**" />
     <EmbeddedResource Remove="wwwroot\Themes\Templates\**" />
   </ItemGroup>
   <ItemGroup>

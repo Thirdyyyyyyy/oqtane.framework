@@ -318,31 +318,30 @@
     {
         try
         {
+            page.Panes = new List<string>();
+            page.Resources = new List<Resource>();
+
+            // validate theme
             if (string.IsNullOrEmpty(page.ThemeType))
             {
                 page.ThemeType = site.DefaultThemeType;
             }
-
-            page.Panes = new List<string>();
-            page.Resources = new List<Resource>();
-
-            // get theme resources
             var theme = site.Themes.FirstOrDefault(item => item.Themes.Any(item => item.TypeName == page.ThemeType));
-            if (theme != null)
+            Type themetype = Type.GetType(page.ThemeType);
+            if (themetype == null || theme == null)
             {
-                page.Resources = ManagePageResources(page.Resources, theme.Resources, ResourceLevel.Page, alias, "Themes", Utilities.GetTypeName(theme.ThemeName));
+                // fallback to default Oqtane theme
+                page.ThemeType = Constants.DefaultTheme;
+                themetype = Type.GetType(Constants.DefaultTheme);
+                theme = site.Themes.FirstOrDefault(item => item.Themes.Any(item => item.TypeName == page.ThemeType));
             }
 
             string panes = "";
-            Type themetype = Type.GetType(page.ThemeType);
-            if (themetype == null)
+            if (themetype != null && theme != null)
             {
-                // fallback
-                page.ThemeType = Constants.DefaultTheme;
-                themetype = Type.GetType(Constants.DefaultTheme);
-            }
-            if (themetype != null)
-            {
+                // get resources for theme (ITheme)
+                page.Resources = ManagePageResources(page.Resources, theme.Resources, ResourceLevel.Page, alias, "Themes", Utilities.GetTypeName(theme.ThemeName));
+
                 var themeobject = Activator.CreateInstance(themetype) as IThemeControl;
                 if (themeobject != null)
                 {
@@ -350,9 +349,11 @@
                     {
                         panes = themeobject.Panes;
                     }
+                    // get resources for theme control
                     page.Resources = ManagePageResources(page.Resources, themeobject.Resources, ResourceLevel.Page, alias, "Themes", themetype.Namespace);
                 }
             }
+
             if (!string.IsNullOrEmpty(panes))
             {
                 page.Panes = panes.Replace(";", ",").Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
@@ -512,21 +513,25 @@
         {
             foreach (var resource in resources)
             {
-                if (resource.Url.StartsWith("~"))
+                if (resource.Level != ResourceLevel.Site)
                 {
-                    resource.Url = resource.Url.Replace("~", "/" + type + "/" + name + "/").Replace("//", "/");
-                }
-                if (!resource.Url.Contains("://") && alias.BaseUrl != "" && !resource.Url.StartsWith(alias.BaseUrl))
-                {
-                    resource.Url = alias.BaseUrl + resource.Url;
-                }
+                    if (resource.Url.StartsWith("~"))
+                    {
+                        resource.Url = resource.Url.Replace("~", "/" + type + "/" + name + "/").Replace("//", "/");
+                    }
+                    if (!resource.Url.Contains("://") && alias.BaseUrl != "" && !resource.Url.StartsWith(alias.BaseUrl))
+                    {
+                        resource.Url = alias.BaseUrl + resource.Url;
+                    }
 
-                // ensure resource does not exist already
-                if (pageresources.Find(item => item.Url == resource.Url) == null)
-                {
-                    resource.Level = level;
-					pageresources.Add(resource);
-				}
+                    // ensure resource does not exist already
+                    if (!pageresources.Exists(item => item.Url.ToLower() == resource.Url.ToLower()))
+                    {
+                        resource.Level = level;
+                        resource.Namespace = name;
+                        pageresources.Add(resource);
+                    }
+                }
 			}
 		}
 		return pageresources;

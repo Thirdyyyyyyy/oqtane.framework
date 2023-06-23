@@ -19,6 +19,9 @@ using Microsoft.Extensions.Primitives;
 using Oqtane.Enums;
 using Oqtane.Security;
 using Oqtane.Extensions;
+using Oqtane.Themes;
+using System.Collections.Generic;
+using Oqtane.UI;
 
 namespace Oqtane.Pages
 {
@@ -163,7 +166,29 @@ namespace Oqtane.Pages
                             }
                         }
 
-                        // inject scripts
+                        // stylesheets
+                        var resources = new List<Resource>();
+                        if (string.IsNullOrEmpty(page.ThemeType))
+                        {
+                            page.ThemeType = site.DefaultThemeType;
+                        }
+                        var theme = site.Themes.FirstOrDefault(item => item.Themes.Any(item => item.TypeName == page.ThemeType));
+                        if (theme?.Resources != null)
+                        {
+                            resources.AddRange(theme.Resources.Where(item => item.ResourceType == ResourceType.Stylesheet).ToList());
+                        }
+                        var type = Type.GetType(page.ThemeType);
+                        if (type != null)
+                        {
+                            var obj = Activator.CreateInstance(type) as IThemeControl;
+                            if (obj?.Resources != null)
+                            {
+                                resources.AddRange(obj.Resources.Where(item => item.ResourceType == ResourceType.Stylesheet).ToList());
+                            }
+                        }
+                        ManageResources(resources, alias, theme.ThemeName);
+
+                        // scripts
                         if (Runtime == "Server")
                         {
                             ReconnectScript = CreateReconnectScript();
@@ -451,8 +476,8 @@ namespace Oqtane.Pages
             {
                 var url = (resource.Url.Contains("://")) ? resource.Url : alias.BaseUrl + resource.Url;
                 return "<script src=\"" + url + "\"" +
-                    ((!string.IsNullOrEmpty(resource.CrossOrigin)) ? " crossorigin=\"" + resource.CrossOrigin + "\"" : "") +
                     ((!string.IsNullOrEmpty(resource.Integrity)) ? " integrity=\"" + resource.Integrity + "\"" : "") +
+                    ((!string.IsNullOrEmpty(resource.CrossOrigin)) ? " crossorigin=\"" + resource.CrossOrigin + "\"" : "") +
                     "></script>";
             }
             else
@@ -467,6 +492,36 @@ namespace Oqtane.Pages
             HttpContext.Response.Cookies.Append(
                 CookieRequestCultureProvider.DefaultCookieName,
                 CookieRequestCultureProvider.MakeCookieValue(new RequestCulture(culture)));
+        }
+
+        private void ManageResources(List<Resource> resources, Alias alias, string name)
+        {
+            if (resources != null)
+            {
+                int count = 0;
+                foreach (var resource in resources)
+                {
+                    if (resource.Url.StartsWith("~"))
+                    {
+                        resource.Url = resource.Url.Replace("~", "/Themes/" + name + "/").Replace("//", "/");
+                    }
+                    if (!resource.Url.Contains("://") && alias.BaseUrl != "" && !resource.Url.StartsWith(alias.BaseUrl))
+                    {
+                        resource.Url = alias.BaseUrl + resource.Url;
+                    }
+
+                    if (!HeadResources.Contains(resource.Url, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string id = "";
+                        if (!HttpContext.Request.Query.ContainsKey("method") || (HttpContext.Request.Query.ContainsKey("method") && HttpContext.Request.Query["method"] == "old"))
+                        {
+                            count++;
+                            id = "id=\"app-stylesheet-" + ResourceLevel.Page.ToString().ToLower() + "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + count.ToString("00") + "\" ";
+                        }
+                        HeadResources += "<link " + id + "rel=\"stylesheet\" href=\"" + resource.Url + "\"" + (!string.IsNullOrEmpty(resource.Integrity) ? " integrity=\"" + resource.Integrity + "\"" : "") + (!string.IsNullOrEmpty(resource.CrossOrigin) ? " crossorigin=\"" + resource.CrossOrigin + "\"" : "") + " type=\"text/css\"/>" + Environment.NewLine;
+                    }
+                }
+            }
         }
     }
 }

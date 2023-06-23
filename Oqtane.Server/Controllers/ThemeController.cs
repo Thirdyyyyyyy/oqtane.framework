@@ -117,7 +117,9 @@ namespace Oqtane.Controllers
                 }
 
                 // remove theme
-                //_themes.DeleteTheme(theme.ThemeName);
+                _themes.DeleteTheme(theme.ThemeId);
+                _syncManager.AddSyncEvent(_alias.TenantId, EntityNames.Theme, theme.ThemeId, SyncEventActions.Delete);
+                _syncManager.AddSyncEvent(_alias.TenantId, EntityNames.Site, theme.SiteId, SyncEventActions.Refresh);
                 _logger.Log(LogLevel.Information, this, LogFunction.Delete, "Theme Removed For {ThemeName}", theme.ThemeName);
             }
             else
@@ -171,12 +173,12 @@ namespace Oqtane.Controllers
                 if (theme.Template.ToLower().Contains("internal"))
                 {
                     rootPath = Utilities.PathCombine(rootFolder.FullName, Path.DirectorySeparatorChar.ToString());
-                    theme.ThemeName = theme.Owner + "." + theme.Name + ", Oqtane.Client";
+                    theme.ThemeName = theme.Owner + ".Theme." + theme.Name + ", Oqtane.Client";
                 }
                 else
                 {
-                    rootPath = Utilities.PathCombine(rootFolder.Parent.FullName, theme.Owner + "." + theme.Name, Path.DirectorySeparatorChar.ToString());
-                    theme.ThemeName = theme.Owner + "." + theme.Name + ", " + theme.Owner + "." + theme.Name + ".Client.Oqtane";
+                    rootPath = Utilities.PathCombine(rootFolder.Parent.FullName, theme.Owner + ".Theme." + theme.Name, Path.DirectorySeparatorChar.ToString());
+                    theme.ThemeName = theme.Owner + ".Theme." + theme.Name + ", " + theme.Owner + ".Theme." + theme.Name + ".Client.Oqtane";
                 }
 
                 ProcessTemplatesRecursively(new DirectoryInfo(templatePath), rootPath, rootFolder.Name, templatePath, theme);
