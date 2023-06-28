@@ -21,7 +21,6 @@ using Oqtane.Security;
 using Oqtane.Extensions;
 using Oqtane.Themes;
 using System.Collections.Generic;
-using Oqtane.UI;
 
 namespace Oqtane.Pages
 {
@@ -69,6 +68,7 @@ namespace Oqtane.Pages
         public string RemoteIPAddress = "";
         public string HeadResources = "";
         public string BodyResources = "";
+        public string StyleSheets = "";
         public string PWAScript = "";
         public string ReconnectScript = "";
         public string Message = "";
@@ -186,7 +186,7 @@ namespace Oqtane.Pages
                                 resources.AddRange(obj.Resources.Where(item => item.ResourceType == ResourceType.Stylesheet).ToList());
                             }
                         }
-                        ManageResources(resources, alias, theme.ThemeName);
+                        ManageStyleSheets(resources, alias, theme.ThemeName);
 
                         // scripts
                         if (Runtime == "Server")
@@ -494,7 +494,7 @@ namespace Oqtane.Pages
                 CookieRequestCultureProvider.MakeCookieValue(new RequestCulture(culture)));
         }
 
-        private void ManageResources(List<Resource> resources, Alias alias, string name)
+        private void ManageStyleSheets(List<Resource> resources, Alias alias, string name)
         {
             if (resources != null)
             {
@@ -510,15 +510,11 @@ namespace Oqtane.Pages
                         resource.Url = alias.BaseUrl + resource.Url;
                     }
 
-                    if (!HeadResources.Contains(resource.Url, StringComparison.OrdinalIgnoreCase))
+                    if (!StyleSheets.Contains(resource.Url, StringComparison.OrdinalIgnoreCase))
                     {
-                        string id = "";
-                        if (!HttpContext.Request.Query.ContainsKey("method") || (HttpContext.Request.Query.ContainsKey("method") && HttpContext.Request.Query["method"] == "old"))
-                        {
-                            count++;
-                            id = "id=\"app-stylesheet-" + ResourceLevel.Page.ToString().ToLower() + "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + count.ToString("00") + "\" ";
-                        }
-                        HeadResources += "<link " + id + "rel=\"stylesheet\" href=\"" + resource.Url + "\"" + (!string.IsNullOrEmpty(resource.Integrity) ? " integrity=\"" + resource.Integrity + "\"" : "") + (!string.IsNullOrEmpty(resource.CrossOrigin) ? " crossorigin=\"" + resource.CrossOrigin + "\"" : "") + " type=\"text/css\"/>" + Environment.NewLine;
+                        count++;
+                        string id = "id=\"app-stylesheet-" + ResourceLevel.Page.ToString().ToLower() + "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + count.ToString("00") + "\" ";
+                        StyleSheets += "<link " + id + "rel=\"stylesheet\" href=\"" + resource.Url + "\"" + (!string.IsNullOrEmpty(resource.Integrity) ? " integrity=\"" + resource.Integrity + "\"" : "") + (!string.IsNullOrEmpty(resource.CrossOrigin) ? " crossorigin=\"" + resource.CrossOrigin + "\"" : "") + " type=\"text/css\"/>" + Environment.NewLine;
                     }
                 }
             }
