@@ -21,10 +21,10 @@ namespace Oqtane.Repository
         private readonly IPermissionRepository _permissions;
         private readonly ITenantManager _tenants;
         private readonly ISettingRepository _settings;
-        private readonly ServerStateManager _serverState;
+        private readonly IServerStateManager _serverState;
         private readonly string settingprefix = "SiteEnabled:";
 
-        public ModuleDefinitionRepository(MasterDBContext context, IMemoryCache cache, IPermissionRepository permissions, ITenantManager tenants, ISettingRepository settings, ServerStateManager serverState)
+        public ModuleDefinitionRepository(MasterDBContext context, IMemoryCache cache, IPermissionRepository permissions, ITenantManager tenants, ISettingRepository settings, IServerStateManager serverState)
         {
             _db = context;
             _cache = cache;
@@ -142,10 +142,10 @@ namespace Oqtane.Repository
                 if (moduledefinition == null)
                 {
                     // new module definition
-                    moduledefinition = new ModuleDefinition { ModuleDefinitionName = ModuleDefinition.ModuleDefinitionName };
+                    moduledefinition = new ModuleDefinition { ModuleDefinitionName = ModuleDefinition.ModuleDefinitionName, Version = ModuleDefinition.Version };
                     _db.ModuleDefinition.Add(moduledefinition);
                     _db.SaveChanges();
-                    ModuleDefinition.Version = "";
+                    ModuleDefinition.Version = ""; // ensure migrations are executed during startup
                 }
                 else
                 {
@@ -153,16 +153,18 @@ namespace Oqtane.Repository
                     ModuleDefinition.Name = (!string.IsNullOrEmpty(moduledefinition.Name)) ? moduledefinition.Name : ModuleDefinition.Name;
                     ModuleDefinition.Description = (!string.IsNullOrEmpty(moduledefinition.Description)) ? moduledefinition.Description : ModuleDefinition.Description;
                     ModuleDefinition.Categories = (!string.IsNullOrEmpty(moduledefinition.Categories)) ? moduledefinition.Categories : ModuleDefinition.Categories;
-                    // manage releaseversions in cases where it was not provided or is lower than the module version
-                    if (string.IsNullOrEmpty(ModuleDefinition.ReleaseVersions) || Version.Parse(ModuleDefinition.Version).CompareTo(Version.Parse(ModuleDefinition.ReleaseVersions.Split(',').Last())) > 0)
-                    {
-                        ModuleDefinition.ReleaseVersions = ModuleDefinition.Version;
-                    }
-                    ModuleDefinition.Version = moduledefinition.Version;
+
                     // remove module definition from list as it is already synced
                     moduledefinitions.Remove(moduledefinition);
                 }
 
+                // manage releaseversions in cases where it was not provided or is lower than the module version
+                if (string.IsNullOrEmpty(ModuleDefinition.ReleaseVersions) || Version.Parse(ModuleDefinition.Version).CompareTo(Version.Parse(ModuleDefinition.ReleaseVersions.Split(',').Last())) > 0)
+                {
+                    ModuleDefinition.ReleaseVersions = ModuleDefinition.Version;
+                }
+
+                // load db properties
                 ModuleDefinition.ModuleDefinitionId = moduledefinition.ModuleDefinitionId;
                 ModuleDefinition.CreatedBy = moduledefinition.CreatedBy;
                 ModuleDefinition.CreatedOn = moduledefinition.CreatedOn;
@@ -179,6 +181,8 @@ namespace Oqtane.Repository
 
             if (siteId != -1)
             {
+                var siteKey = _tenants.GetAlias().SiteKey;
+
                 // get all module definition permissions for site
                 List<Permission> permissions = _permissions.GetPermissions(siteId, EntityNames.ModuleDefinition).ToList();
 
@@ -186,7 +190,7 @@ namespace Oqtane.Repository
                 var settings = _settings.GetSettings(EntityNames.ModuleDefinition).ToList();
 
                 // populate module definition site settings and permissions
-                var serverState = _serverState.GetServerState(siteId);
+                var serverState = _serverState.GetServerState(siteKey);
                 foreach (ModuleDefinition moduledefinition in ModuleDefinitions)
                 {
                     moduledefinition.SiteId = siteId;
@@ -212,9 +216,9 @@ namespace Oqtane.Repository
                         {
                             foreach (var assembly in moduledefinition.Dependencies.Replace(".dll", "").Split(',', StringSplitOptions.RemoveEmptyEntries).Reverse())
                             {
-                                if (!serverState.Assemblies.Contains(assembly))
+                                if (!serverState.Assemblies.Contains(assembly.Trim()))
                                 {
-                                    serverState.Assemblies.Insert(0, assembly);
+                                    serverState.Assemblies.Insert(0, assembly.Trim());
                                 }
                             }
                         }
@@ -251,7 +255,6 @@ namespace Oqtane.Repository
                         }
                     }
                 }
-                _serverState.SetServerState(siteId, serverState);
 
                 // clean up any orphaned permissions
                 var ids = new HashSet<int>(ModuleDefinitions.Select(item => item.ModuleDefinitionId));

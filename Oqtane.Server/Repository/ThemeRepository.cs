@@ -22,10 +22,10 @@ namespace Oqtane.Repository
         private readonly IMemoryCache _cache;
         private readonly ITenantManager _tenants;
         private readonly ISettingRepository _settings;
-        private readonly ServerStateManager _serverState;
+        private readonly IServerStateManager _serverState;
         private readonly string settingprefix = "SiteEnabled:";
 
-        public ThemeRepository(MasterDBContext context, IMemoryCache cache, ITenantManager tenants, ISettingRepository settings, ServerStateManager serverState)
+        public ThemeRepository(MasterDBContext context, IMemoryCache cache, ITenantManager tenants, ISettingRepository settings, IServerStateManager serverState)
         {
             _db = context;
             _cache = cache;
@@ -123,7 +123,7 @@ namespace Oqtane.Repository
                 if (theme == null)
                 {
                     // new theme
-                    theme = new Theme { ThemeName = Theme.ThemeName };
+                    theme = new Theme { ThemeName = Theme.ThemeName, Version = Theme.Version };
                     _db.Theme.Add(theme);
                     _db.SaveChanges();
                 }
@@ -131,6 +131,7 @@ namespace Oqtane.Repository
                 {
                     // override user customizable property values
                     Theme.Name = (!string.IsNullOrEmpty(theme.Name)) ? theme.Name : Theme.Name;
+
                     // remove theme from list as it is already synced
                     themes.Remove(theme);
                 }
@@ -141,6 +142,7 @@ namespace Oqtane.Repository
                     themecontrol.Name = Theme.Name + " - " + themecontrol.Name;
                 }
 
+                // load db properties
                 Theme.ThemeId = theme.ThemeId;
                 Theme.CreatedBy = theme.CreatedBy;
                 Theme.CreatedOn = theme.CreatedOn;
@@ -157,11 +159,13 @@ namespace Oqtane.Repository
 
             if (siteId != -1)
             {
+                var siteKey = _tenants.GetAlias().SiteKey;
+
                 // get settings for site
                 var settings = _settings.GetSettings(EntityNames.Theme).ToList();
 
                 // populate theme site settings
-                var serverState = _serverState.GetServerState(siteId);
+                var serverState = _serverState.GetServerState(siteKey);
                 foreach (Theme theme in Themes)
                 {
                     theme.SiteId = siteId;
@@ -187,9 +191,9 @@ namespace Oqtane.Repository
                         {
                             foreach (var assembly in theme.Dependencies.Replace(".dll", "").Split(',', StringSplitOptions.RemoveEmptyEntries).Reverse())
                             {
-                                if (!serverState.Assemblies.Contains(assembly))
+                                if (!serverState.Assemblies.Contains(assembly.Trim()))
                                 {
-                                    serverState.Assemblies.Insert(0, assembly);
+                                    serverState.Assemblies.Insert(0, assembly.Trim());
                                 }
                             }
                         }
@@ -206,7 +210,6 @@ namespace Oqtane.Repository
                         }
                     }
                 }
-                _serverState.SetServerState(siteId, serverState);
             }
 
             return Themes;

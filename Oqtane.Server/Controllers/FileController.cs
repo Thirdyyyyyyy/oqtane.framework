@@ -159,6 +159,48 @@ namespace Oqtane.Controllers
             }
         }
 
+        // POST api/<controller>
+        [HttpPost]
+        [Authorize(Roles = RoleNames.Registered)]
+        public Models.File Post([FromBody] Models.File file)
+        {
+            var folder = _folders.GetFolder(file.FolderId);
+            if (ModelState.IsValid && folder != null && folder.SiteId == _alias.SiteId)
+            {
+                if (_userPermissions.IsAuthorized(User, folder.SiteId, EntityNames.Folder, file.FolderId, PermissionNames.Edit))
+                {
+                    var filepath = _files.GetFilePath(file);
+                    if (System.IO.File.Exists(filepath))
+                    {
+                        file = CreateFile(file.Name, folder.FolderId, filepath);
+                        file = _files.AddFile(file);
+                        _syncManager.AddSyncEvent(_alias.TenantId, EntityNames.File, file.FileId, SyncEventActions.Create);
+                        _logger.Log(LogLevel.Information, this, LogFunction.Create, "File Added {File}", file);
+                    }
+                    else
+                    {
+                        _logger.Log(LogLevel.Error, this, LogFunction.Security, "File Does Not Exist At Path {FilePath}", filepath);
+                        HttpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                        file = null;
+                    }
+                }
+                else
+                {
+                    _logger.Log(LogLevel.Error, this, LogFunction.Security, "Unauthorized File Post Attempt {File}", file);
+                    HttpContext.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                    file = null;
+                }
+            }
+            else
+            {
+                _logger.Log(LogLevel.Error, this, LogFunction.Security, "Unauthorized File Post Attempt {File}", file);
+                HttpContext.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                file = null;
+            }
+
+            return file;
+        }
+
         // PUT api/<controller>/5
         [HttpPut("{id}")]
         [Authorize(Roles = RoleNames.Registered)]
@@ -572,7 +614,7 @@ namespace Oqtane.Controllers
                         // validation
                         if (!Enum.TryParse(mode, true, out ResizeMode _)) mode = "crop";
                         if (!Enum.TryParse(position, true, out AnchorPositionMode _)) position = "center";
-                        if (!Color.TryParseHex("#" + background, out _)) background = "000000";
+                        if (!Color.TryParseHex("#" + background, out _)) background = "transparent";
                         if (!int.TryParse(rotate, out _)) rotate = "0";
                         rotate = (int.Parse(rotate) < 0 || int.Parse(rotate) > 360) ? "0" : rotate;
                         if (!bool.TryParse(recreate, out _)) recreate = "false";
@@ -580,8 +622,9 @@ namespace Oqtane.Controllers
                         string imagepath = filepath.Replace(Path.GetExtension(filepath), "." + width.ToString() + "x" + height.ToString() + ".png");
                         if (!System.IO.File.Exists(imagepath) || bool.Parse(recreate))
                         {
-                            if ((_userPermissions.IsAuthorized(User, PermissionNames.Edit, file.Folder.PermissionList) ||
-                              !string.IsNullOrEmpty(file.Folder.ImageSizes) && file.Folder.ImageSizes.ToLower().Split(",").Contains(width.ToString() + "x" + height.ToString())))
+                            // user has edit access to folder or folder supports the image size being created
+                            if (_userPermissions.IsAuthorized(User, PermissionNames.Edit, file.Folder.PermissionList) ||
+                              (!string.IsNullOrEmpty(file.Folder.ImageSizes) && (file.Folder.ImageSizes == "*" || file.Folder.ImageSizes.ToLower().Split(",").Contains(width.ToString() + "x" + height.ToString()))))
                             {
                                 imagepath = CreateImage(filepath, width, height, mode, position, background, rotate, imagepath);
                             }
@@ -636,18 +679,45 @@ namespace Oqtane.Controllers
                         Enum.TryParse(mode, true, out ResizeMode resizemode);
                         Enum.TryParse(position, true, out AnchorPositionMode anchorpositionmode);
 
-                        image.Mutate(x => x
-                            .AutoOrient() // auto orient the image
-                            .Rotate(angle)
-                            .Resize(new ResizeOptions
-                            {
-                                Mode = resizemode,
-                                Position = anchorpositionmode,
-                                Size = new Size(width, height)
-                            })
-                            .BackgroundColor(Color.ParseHex("#" + background)));
+                        PngEncoder encoder;
 
-                        image.Save(imagepath, new PngEncoder());
+                        if (background != "transparent")
+                        {
+                            image.Mutate(x => x
+                                .AutoOrient() // auto orient the image
+                                .Rotate(angle)
+                                .Resize(new ResizeOptions
+                                {
+                                    Mode = resizemode,
+                                    Position = anchorpositionmode,
+                                    Size = new Size(width, height),
+                                    PadColor = Color.ParseHex("#" + background)
+                                }));
+
+                            encoder = new PngEncoder();
+                        }
+                        else
+                        {
+                            image.Mutate(x => x
+                                .AutoOrient() // auto orient the image
+                                .Rotate(angle)
+                                .Resize(new ResizeOptions
+                                {
+                                    Mode = resizemode,
+                                    Position = anchorpositionmode,
+                                    Size = new Size(width, height)
+                                }));
+
+                            encoder = new PngEncoder
+                            {
+                                ColorType = PngColorType.RgbWithAlpha,
+                                TransparentColorMode = PngTransparentColorMode.Preserve,
+                                BitDepth = PngBitDepth.Bit8,
+                                CompressionLevel = PngCompressionLevel.BestSpeed
+                            };
+                        }
+
+                        image.Save(imagepath, encoder);
                     }
                 }
             }
@@ -677,7 +747,14 @@ namespace Oqtane.Controllers
                     path = Utilities.PathCombine(path, folder, Path.DirectorySeparatorChar.ToString());
                     if (!Directory.Exists(path))
                     {
-                        Directory.CreateDirectory(path);
+                        try
+                        {
+                            Directory.CreateDirectory(path);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Log(LogLevel.Error, this, LogFunction.Create, ex, "Unable To Create Folder {Folder}", path);
+                        }
                     }
                 }
             }
